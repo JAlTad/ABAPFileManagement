@@ -101,8 +101,8 @@ CLASS z001_file_management IMPLEMENTATION.
     DATA ls_file_path  LIKE LINE OF lt_file_table.
 
 * Give file path
-    cl_gui_frontend_services=>file_open_dialog( EXPORTING  " window_title            = CONV string( 'Fichero'(001) )
-                                                " default_extension       = 'C:\'
+    cl_gui_frontend_services=>file_open_dialog( EXPORTING  " window_title            = CONV string( 'File' )
+                                                           " default_extension       = 'C:\'
 *                                                           file_filter             = '*.txt'
                                                            multiselection          = abap_false
                                                 CHANGING   file_table              = lt_file_table
@@ -139,7 +139,7 @@ CLASS z001_file_management IMPLEMENTATION.
       WHEN server.
         file_separator = '/'.
         CONCATENATE i_file_path
-                    file_separator "'/'
+                    file_separator
                     i_file_name INTO ld_file.
 
         OPEN DATASET ld_file FOR INPUT IN BINARY MODE.
@@ -163,7 +163,7 @@ CLASS z001_file_management IMPLEMENTATION.
         IF sy-subrc = 0.
 
           CONCATENATE i_file_path
-                      file_separator "'\'
+                      file_separator
                       i_file_name INTO ld_file.
 
           cl_gui_frontend_services=>file_exist( EXPORTING  file                 = ld_file
