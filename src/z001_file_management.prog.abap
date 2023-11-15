@@ -99,49 +99,83 @@ CLASS z001_file_management IMPLEMENTATION.
     CONSTANTS lc_path_symbol TYPE c LENGTH 1 VALUE '/'.
 
     CALL FUNCTION '/SAPDMC/LSM_F4_SERVER_FILE'
-      EXPORTING  directory        = i_default
-*                 FILEMASK         = ' '
-      IMPORTING  serverfile       = r_path
-      EXCEPTIONS canceled_by_user = 1
-                 OTHERS           = 2.
+      EXPORTING
+        directory        = i_default
+*       FILEMASK         = ' '
+      IMPORTING
+        serverfile       = r_path
+      EXCEPTIONS
+        canceled_by_user = 1
+        OTHERS           = 2.
     IF sy-subrc <> 0.
 * Implement suitable error handling here
     ELSE.
-      IF i_only_path = abap_true.
-        DATA tab_dir_list TYPE STANDARD TABLE OF epsfili.
-        CALL FUNCTION 'EPS_GET_DIRECTORY_LISTING'
-          EXPORTING  dir_name               = CONV epsdirnam( r_path )
-*                     FILE_MASK              = ' '
-*         IMPORTING
-*                     DIR_NAME               =
-*                     FILE_COUNTER           =
-*                     ERROR_COUNTER          =
-          TABLES     dir_list               = tab_dir_list
-          EXCEPTIONS invalid_eps_subdir     = 1
-                     sapgparam_failed       = 2
-                     build_directory_failed = 3
-                     no_authorization       = 4
-                     read_directory_failed  = 5
-                     too_many_read_errors   = 6
-                     empty_directory_list   = 7
-                     OTHERS                 = 8.
-        IF sy-subrc = 0 OR sy-subrc = 7.
 
-          " Es un directorio, vacío o no
-          DATA(name_len) = strlen( r_path ).
-          DATA(offset) = name_len - 1.
+      DATA filetype TYPE epsfiltyp.
 
-          IF r_path+offset(1) <> lc_path_symbol.
-            CONCATENATE r_path lc_path_symbol INTO r_path.
-          ENDIF.
-        ELSE.
-          MESSAGE s018(zcwt) WITH r_path DISPLAY LIKE 'E'.
+      CALL FUNCTION 'EPS_GET_FILE_ATTRIBUTES'
+        EXPORTING
+*         FILE_NAME              =
+          iv_long_file_name      = CONV eps2filnam( r_path )
+*         DIR_NAME               =
+*         IV_LONG_DIR_NAME       =
+        IMPORTING
+*         FILE_SIZE              =
+*         FILE_OWNER             =
+*         FILE_MODE              =
+          file_type              = filetype
+*         FILE_MTIME             =
+*         FILE_SIZE_LONG         =
+        EXCEPTIONS
+          read_directory_failed  = 1
+          read_attributes_failed = 2
+          OTHERS                 = 3.
+      IF sy-subrc <> 0.
+
+        MESSAGE s018(zcwt) WITH r_path DISPLAY LIKE 'E'.
 * & no es un directorio válido
-
-        ENDIF.
-
+        RETURN.
       ENDIF.
+
+      CASE i_only_path.
+        WHEN abap_true.
+          IF filetype CS 'file'.
+            CALL FUNCTION 'TRINT_SPLIT_FILE_AND_PATH'
+              EXPORTING
+                full_name = r_path
+              IMPORTING
+*               STRIPPED_NAME       =
+                file_path = r_path
+              EXCEPTIONS
+                x_error   = 1
+                OTHERS    = 2.
+            IF sy-subrc <> 0.
+* Implement suitable error handling here
+            ENDIF.
+          ELSEIF filetype = 'directory'.
+*        Put directory separator symbol at the end
+            DATA(name_len) = strlen( r_path ).
+            DATA(offset) = name_len - 1.
+
+            IF r_path+offset(1) <> lc_path_symbol.
+              CONCATENATE r_path lc_path_symbol INTO r_path.
+            ENDIF.
+          ELSE.
+            "Error ??
+            RETURN.
+          ENDIF.
+
+
+        WHEN abap_false.
+          IF filetype CS 'file'.
+            RETURN.
+          ELSE.
+*              Not a file
+          ENDIF.
+      ENDCASE.
+
     ENDIF.
+
   ENDMETHOD.
 
   METHOD search_help_local_file.
@@ -416,11 +450,13 @@ CLASS z001_file_management IMPLEMENTATION.
     CASE i_target.
       WHEN server.
         CALL FUNCTION 'ARCHIVFILE_SERVER_TO_SERVER'
-          EXPORTING  sourcepath       = i_filename_origin  " Path + file name on application server
-                     targetpath       = i_filename_destination   " Path + file name on client
-          EXCEPTIONS error_file       = 1                " File access error
-                     no_authorization = 2
-                     OTHERS           = 3.
+          EXPORTING
+            sourcepath       = i_filename_origin  " Path + file name on application server
+            targetpath       = i_filename_destination   " Path + file name on client
+          EXCEPTIONS
+            error_file       = 1                " File access error
+            no_authorization = 2
+            OTHERS           = 3.
 
         IF sy-subrc = 0.
           DELETE DATASET i_filename_origin.
