@@ -42,13 +42,13 @@ CLASS z001_file_management DEFINITION.
     "! @parameter i_default   | Input default pathname/filename
     "! @parameter i_only_path | Return only pathname
     "! @parameter r_path      | Result pathname or filename
-    METHODS search_help_server_file IMPORTING i_default     TYPE eps2filnam
+    METHODS search_help_server_file IMPORTING i_default     TYPE string
                                               i_only_path   TYPE flag
-                                    RETURNING VALUE(r_path) TYPE eps2filnam.
+                                    RETURNING VALUE(r_path) TYPE string.
 
     "! Open a modal window to select local file
     "! @parameter r_path | Complete filename with path
-    METHODS search_help_local_file RETURNING VALUE(r_path) TYPE eps2filnam.
+    METHODS search_help_local_file RETURNING VALUE(r_path) TYPE string.
 
     "! Checks filename existence
     "! @parameter i_file_path    | Path
@@ -474,8 +474,8 @@ CLASS z001_file_management IMPLEMENTATION.
       WHEN server.
         CALL FUNCTION 'ARCHIVFILE_SERVER_TO_SERVER'
           EXPORTING
-            sourcepath       = i_filename_origin  " Path + file name on application server
-            targetpath       = i_filename_destination   " Path + file name on client
+            sourcepath       = CONV saepfad( i_filename_origin )  " Path + file name on application server
+            targetpath       = CONV saepfad( i_filename_destination )   " Path + file name on client
           EXCEPTIONS
             error_file       = 1                " File access error
             no_authorization = 2
