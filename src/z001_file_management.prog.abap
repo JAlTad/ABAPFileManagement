@@ -47,8 +47,10 @@ CLASS z001_file_management DEFINITION.
                                     RETURNING VALUE(r_path) TYPE string.
 
     "! Open a modal window to select local file
+    "! @parameter i_only_path | Return only pathname
     "! @parameter r_path | Complete filename with path
-    METHODS search_help_local_file RETURNING VALUE(r_path) TYPE string.
+    METHODS search_help_local_file IMPORTING i_only_path   TYPE flag
+                                   RETURNING VALUE(r_path) TYPE string.
 
     "! Checks filename existence
     "! @parameter i_file_path    | Path
@@ -120,6 +122,7 @@ ENDCLASS.
 CLASS z001_file_management IMPLEMENTATION.
   METHOD search_help_server_file.
     CONSTANTS lc_path_symbol TYPE c LENGTH 1 VALUE '/'.
+    DATA filetype TYPE epsfiltyp.
 
     CALL FUNCTION '/SAPDMC/LSM_F4_SERVER_FILE'
       EXPORTING
@@ -131,10 +134,61 @@ CLASS z001_file_management IMPLEMENTATION.
         canceled_by_user = 1
         OTHERS           = 2.
     IF sy-subrc <> 0.
+
+      IF sy-subrc = 1.
+        RETURN.
+      ELSE.
 * Implement suitable error handling here
+      ENDIF.
     ELSE.
 
-      DATA filetype TYPE epsfiltyp.
+      TRY.
+          OPEN DATASET r_path FOR INPUT IN LEGACY TEXT MODE.
+          IF sy-subrc = 0.
+            CLOSE DATASET r_path.
+          ELSE.
+            MESSAGE s080(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+            RETURN.
+          ENDIF.
+
+        CATCH cx_sy_file_open.
+*◾Cause: The file is already open.
+*Runtime error: DATASET_REOPEN
+          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          RETURN.
+
+        CATCH cx_sy_codepage_converter_init .
+*◾Cause: The required conversion is not supported. (Due to specification of invalid code page or of language not supported in the conversion, with SET LOCALE LANGUAGE.)
+*Runtime error: CONVT_CODEPAGE_INIT
+          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          RETURN.
+
+        CATCH cx_sy_conversion_codepage.
+*◾Cause: Internal error in the conversion.
+*Runtime error: CONVT_CODEPAGE
+          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          RETURN.
+
+        CATCH cx_sy_file_authority.
+*◾Cause: No authorization for access to file
+*Runtime error: OPEN_DATASET_NO_AUTHORITY
+*◾Cause: Authorization for access to this file is missing in OPEN DATASET with the addition FILTER.
+*Runtime error: OPEN_PIPE_NO_AUTHORITY
+          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          RETURN.
+
+        CATCH cx_sy_pipes_not_supported.
+*◾Cause: The operating system does not support pipes.
+*Runtime error: DATASET_NO_PIPE
+          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          RETURN.
+
+        CATCH cx_sy_too_many_files.
+*◾Cause: Maximum number of open files exceeded.
+*Runtime error: DATASET_TOO_MANY_FILES
+          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          RETURN.
+      ENDTRY.
 
       CALL FUNCTION 'EPS_GET_FILE_ATTRIBUTES'
         EXPORTING
@@ -154,13 +208,11 @@ CLASS z001_file_management IMPLEMENTATION.
           read_attributes_failed = 2
           OTHERS                 = 3.
       IF sy-subrc <> 0.
-
-        MESSAGE s018(zcwt) WITH r_path DISPLAY LIKE 'E'.
-* & no es un directorio válido
+        MESSAGE s050(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
         RETURN.
       ENDIF.
 
-      CASE i_only_path.
+       CASE i_only_path.
         WHEN abap_true.
           IF filetype CS 'file'.
             CALL FUNCTION 'TRINT_SPLIT_FILE_AND_PATH'
@@ -184,7 +236,7 @@ CLASS z001_file_management IMPLEMENTATION.
               CONCATENATE r_path lc_path_symbol INTO r_path.
             ENDIF.
           ELSE.
-            "Error ??
+            "Unknown type ?
             RETURN.
           ENDIF.
 
@@ -199,6 +251,7 @@ CLASS z001_file_management IMPLEMENTATION.
 
     ENDIF.
 
+
   ENDMETHOD.
 
   METHOD search_help_local_file.
@@ -206,29 +259,50 @@ CLASS z001_file_management IMPLEMENTATION.
     DATA lt_file_table TYPE filetable.
     DATA ls_file_path  LIKE LINE OF lt_file_table.
 
+    IF i_only_path = abap_true.
+
+      cl_gui_frontend_services=>directory_browse(
+*    EXPORTING
+*      window_title         =                  " Title of Browsing Window
+*      initial_folder       =                  " Start Browsing Here
+        CHANGING
+          selected_folder      =  r_path                " Folder Selected By User
+       EXCEPTIONS
+          cntl_error           = 1                " Control error
+           error_no_gui         = 2                " No GUI available
+           not_supported_by_gui = 3                " GUI does not support this
+           OTHERS               = 4
+      ).
+      IF sy-subrc <> 0.
+*   MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*     WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      ENDIF.
+
+    ELSE.
 * Give file path
-    cl_gui_frontend_services=>file_open_dialog( EXPORTING  " window_title            = CONV string( 'File' )
-                                                " default_extension       = 'C:\'
+      cl_gui_frontend_services=>file_open_dialog( EXPORTING  " window_title            = CONV string( 'File' )
+                                                  " default_extension       = 'C:\'
 *                                                           file_filter             = '*.txt'
-                                                           multiselection          = abap_false
-                                                CHANGING   file_table              = lt_file_table
-                                                           rc                      = lv_rc " row count
+                                                             multiselection          = abap_false
+                                                  CHANGING   file_table              = lt_file_table
+                                                             rc                      = lv_rc " row count
 *                                                           user_action             =
 *                                                           file_encoding           =
-                                                EXCEPTIONS file_open_dialog_failed = 1
-                                                           cntl_error              = 2
-                                                           error_no_gui            = 3
-                                                           not_supported_by_gui    = 4
-                                                           OTHERS                  = 5 ).
+                                                  EXCEPTIONS file_open_dialog_failed = 1
+                                                             cntl_error              = 2
+                                                             error_no_gui            = 3
+                                                             not_supported_by_gui    = 4
+                                                             OTHERS                  = 5 ).
 
-    IF sy-subrc = 0.
-* in this point will pass the path to the parameter
-      READ TABLE lt_file_table INDEX 1 INTO ls_file_path.
       IF sy-subrc = 0.
-        r_path = ls_file_path-filename.
-      ENDIF.
-    ELSE.
+* in this point will pass the path to the parameter
+        READ TABLE lt_file_table INDEX 1 INTO ls_file_path.
+        IF sy-subrc = 0.
+          r_path = ls_file_path-filename.
+        ENDIF.
+      ELSE.
 * Error
+      ENDIF.
     ENDIF.
   ENDMETHOD.
 
