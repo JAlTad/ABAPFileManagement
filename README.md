@@ -1,7 +1,7 @@
 [![License](https://img.shields.io/github/license/abapGit/abapGit?label=License&color=green)](LICENSE)
 
 Monolithic, single file ABAP Object Oriented class to manage file access for application server and presentation server.
-Just a compilation of code as a framework to custom code or SAP classes and function modules.
+Wrapper of standard functions/methods or well know public code, with the intention to give a more consistent interface of parameters for the more common use cases.
 
 ABAP Version: 740 or higher
 
