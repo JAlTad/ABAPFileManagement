@@ -48,7 +48,7 @@ CLASS z001_file_management DEFINITION.
 
     "! Open a modal window to select local file
     "! @parameter i_only_path | Return only pathname
-    "! @parameter r_path | Complete filename with path
+    "! @parameter r_path      | Complete filename with path
     METHODS search_help_local_file IMPORTING i_only_path   TYPE flag
                                    RETURNING VALUE(r_path) TYPE string.
 
@@ -95,18 +95,30 @@ CLASS z001_file_management DEFINITION.
                                         invalid_target.
 
     "! Move a file, server to server or frontend to frontend
-    "! @exception internal_error | Internal error
-    "! @exception invalid_target | Invalid target value
-    "! @parameter i_filename_origin | Filename and path of source file
+    "! @parameter i_filename_origin      | Filename and path of source file
     "! @parameter i_filename_destination | Filename and path of destination file
-    "! @parameter i_target | (S)erver or (L)ocal
-    "! @parameter e_result | Technical result value
+    "! @parameter i_target               | (S)erver or (L)ocal
+    "! @parameter e_result               | Technical result value
+    "! @exception internal_error         | Internal error
+    "! @exception invalid_target         | Invalid target value
     METHODS move_file IMPORTING  i_filename_origin      TYPE string
                                  i_filename_destination TYPE string
                                  i_target               TYPE l_file_target
                       EXPORTING  e_result               TYPE sysubrc
                       EXCEPTIONS internal_error
                                  invalid_target.
+
+    "! Delete a file, server to server or frontend to frontend
+    "! @parameter i_filename     | Filename and path of file
+    "! @parameter i_target       | (S)erver or (L)ocal
+    "! @parameter e_result       | Technical result value
+    "! @exception internal_error | Internal error
+    "! @exception invalid_target | Invalid target value
+    METHODS delete_file IMPORTING  i_filename TYPE string
+                                   i_target   TYPE l_file_target
+                        EXPORTING  e_result   TYPE sysubrc
+                        EXCEPTIONS internal_error
+                                   invalid_target.
 
   PRIVATE SECTION.
     METHODS read_binary_file_local IMPORTING  i_filename TYPE string
@@ -125,14 +137,11 @@ CLASS z001_file_management IMPLEMENTATION.
     DATA filetype TYPE epsfiltyp.
 
     CALL FUNCTION '/SAPDMC/LSM_F4_SERVER_FILE'
-      EXPORTING
-        directory        = i_default
-*       FILEMASK         = ' '
-      IMPORTING
-        serverfile       = r_path
-      EXCEPTIONS
-        canceled_by_user = 1
-        OTHERS           = 2.
+      EXPORTING  directory        = i_default
+*                 FILEMASK         = ' '
+      IMPORTING  serverfile       = r_path
+      EXCEPTIONS canceled_by_user = 1
+                 OTHERS           = 2.
     IF sy-subrc <> 0.
 
       IF sy-subrc = 1.
@@ -147,26 +156,30 @@ CLASS z001_file_management IMPLEMENTATION.
           IF sy-subrc = 0.
             CLOSE DATASET r_path.
           ELSE.
-            MESSAGE s080(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+            MESSAGE s080(mdp_bs_extractor) " WITH r_path
+                    DISPLAY LIKE 'E'.
             RETURN.
           ENDIF.
 
         CATCH cx_sy_file_open.
 *◾Cause: The file is already open.
 *Runtime error: DATASET_REOPEN
-          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          MESSAGE s055(mdp_bs_extractor) " WITH r_path
+                  DISPLAY LIKE 'E'.
           RETURN.
 
-        CATCH cx_sy_codepage_converter_init .
+        CATCH cx_sy_codepage_converter_init.
 *◾Cause: The required conversion is not supported. (Due to specification of invalid code page or of language not supported in the conversion, with SET LOCALE LANGUAGE.)
 *Runtime error: CONVT_CODEPAGE_INIT
-          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          MESSAGE s055(mdp_bs_extractor) " WITH r_path
+                  DISPLAY LIKE 'E'.
           RETURN.
 
         CATCH cx_sy_conversion_codepage.
 *◾Cause: Internal error in the conversion.
 *Runtime error: CONVT_CODEPAGE
-          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          MESSAGE s055(mdp_bs_extractor) " WITH r_path
+                  DISPLAY LIKE 'E'.
           RETURN.
 
         CATCH cx_sy_file_authority.
@@ -174,56 +187,57 @@ CLASS z001_file_management IMPLEMENTATION.
 *Runtime error: OPEN_DATASET_NO_AUTHORITY
 *◾Cause: Authorization for access to this file is missing in OPEN DATASET with the addition FILTER.
 *Runtime error: OPEN_PIPE_NO_AUTHORITY
-          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          MESSAGE s055(mdp_bs_extractor) " WITH r_path
+                  DISPLAY LIKE 'E'.
           RETURN.
 
         CATCH cx_sy_pipes_not_supported.
 *◾Cause: The operating system does not support pipes.
 *Runtime error: DATASET_NO_PIPE
-          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          MESSAGE s055(mdp_bs_extractor) " WITH r_path
+                  DISPLAY LIKE 'E'.
           RETURN.
 
         CATCH cx_sy_too_many_files.
 *◾Cause: Maximum number of open files exceeded.
 *Runtime error: DATASET_TOO_MANY_FILES
-          MESSAGE s055(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+          MESSAGE s055(mdp_bs_extractor) " WITH r_path
+                  DISPLAY LIKE 'E'.
           RETURN.
       ENDTRY.
 
       CALL FUNCTION 'EPS_GET_FILE_ATTRIBUTES'
         EXPORTING
-*         FILE_NAME              =
-          iv_long_file_name      = CONV eps2filnam( r_path )
-*         DIR_NAME               =
-*         IV_LONG_DIR_NAME       =
+*                   FILE_NAME              =
+                   iv_long_file_name      = CONV eps2filnam( r_path )
+*                   DIR_NAME               =
+*                   IV_LONG_DIR_NAME       =
         IMPORTING
-*         FILE_SIZE              =
-*         FILE_OWNER             =
-*         FILE_MODE              =
-          file_type              = filetype
-*         FILE_MTIME             =
-*         FILE_SIZE_LONG         =
-        EXCEPTIONS
-          read_directory_failed  = 1
-          read_attributes_failed = 2
-          OTHERS                 = 3.
+*                   FILE_SIZE              =
+*                   FILE_OWNER             =
+*                   FILE_MODE              =
+                   file_type              = filetype
+*                   FILE_MTIME             =
+*                   FILE_SIZE_LONG         =
+        EXCEPTIONS read_directory_failed  = 1
+                   read_attributes_failed = 2
+                   OTHERS                 = 3.
       IF sy-subrc <> 0.
-        MESSAGE s050(mdp_bs_extractor) WITH r_path DISPLAY LIKE 'E'.
+        MESSAGE s050(mdp_bs_extractor) " WITH r_path
+                DISPLAY LIKE 'E'.
         RETURN.
       ENDIF.
 
-       CASE i_only_path.
+      CASE i_only_path.
         WHEN abap_true.
           IF filetype CS 'file'.
             CALL FUNCTION 'TRINT_SPLIT_FILE_AND_PATH'
-              EXPORTING
-                full_name = r_path
+              EXPORTING  full_name = r_path
               IMPORTING
-*               STRIPPED_NAME       =
-                file_path = r_path
-              EXCEPTIONS
-                x_error   = 1
-                OTHERS    = 2.
+*                         STRIPPED_NAME =
+                         file_path = r_path
+              EXCEPTIONS x_error   = 1
+                         OTHERS    = 2.
             IF sy-subrc <> 0.
 * Implement suitable error handling here
             ENDIF.
@@ -236,10 +250,9 @@ CLASS z001_file_management IMPLEMENTATION.
               CONCATENATE r_path lc_path_symbol INTO r_path.
             ENDIF.
           ELSE.
-            "Unknown type ?
+            " Unknown type ?
             RETURN.
           ENDIF.
-
 
         WHEN abap_false.
           IF filetype CS 'file'.
@@ -250,8 +263,6 @@ CLASS z001_file_management IMPLEMENTATION.
       ENDCASE.
 
     ENDIF.
-
-
   ENDMETHOD.
 
   METHOD search_help_local_file.
@@ -263,16 +274,13 @@ CLASS z001_file_management IMPLEMENTATION.
 
       cl_gui_frontend_services=>directory_browse(
 *    EXPORTING
-*      window_title         =                  " Title of Browsing Window
-*      initial_folder       =                  " Start Browsing Here
-        CHANGING
-          selected_folder      =  r_path                " Folder Selected By User
-       EXCEPTIONS
-          cntl_error           = 1                " Control error
-           error_no_gui         = 2                " No GUI available
-           not_supported_by_gui = 3                " GUI does not support this
-           OTHERS               = 4
-      ).
+*                                                             window_title         = " Title of Browsing Window
+*                                                             initial_folder       = " Start Browsing Here
+                                                  CHANGING   selected_folder      = r_path                " Folder Selected By User
+                                                  EXCEPTIONS cntl_error           = 1                " Control error
+                                                             error_no_gui         = 2                " No GUI available
+                                                             not_supported_by_gui = 3                " GUI does not support this
+                                                             OTHERS               = 4 ).
       IF sy-subrc <> 0.
 *   MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
 *     WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
@@ -282,12 +290,12 @@ CLASS z001_file_management IMPLEMENTATION.
 * Give file path
       cl_gui_frontend_services=>file_open_dialog( EXPORTING  " window_title            = CONV string( 'File' )
                                                   " default_extension       = 'C:\'
-*                                                           file_filter             = '*.txt'
+*                                                             file_filter             = '*.txt'
                                                              multiselection          = abap_false
                                                   CHANGING   file_table              = lt_file_table
                                                              rc                      = lv_rc " row count
-*                                                           user_action             =
-*                                                           file_encoding           =
+*                                                             user_action             =
+*                                                             file_encoding           =
                                                   EXCEPTIONS file_open_dialog_failed = 1
                                                              cntl_error              = 2
                                                              error_no_gui            = 3
@@ -547,13 +555,11 @@ CLASS z001_file_management IMPLEMENTATION.
     CASE i_target.
       WHEN server.
         CALL FUNCTION 'ARCHIVFILE_SERVER_TO_SERVER'
-          EXPORTING
-            sourcepath       = CONV saepfad( i_filename_origin )  " Path + file name on application server
-            targetpath       = CONV saepfad( i_filename_destination )   " Path + file name on client
-          EXCEPTIONS
-            error_file       = 1                " File access error
-            no_authorization = 2
-            OTHERS           = 3.
+          EXPORTING  sourcepath       = CONV saepfad( i_filename_origin )  " Path + file name on application server
+                     targetpath       = CONV saepfad( i_filename_destination )   " Path + file name on client
+          EXCEPTIONS error_file       = 1                " File access error
+                     no_authorization = 2
+                     OTHERS           = 3.
 
         IF sy-subrc = 0.
           DELETE DATASET i_filename_origin.
@@ -603,6 +609,42 @@ CLASS z001_file_management IMPLEMENTATION.
           RAISE internal_error.
         ENDIF.
 
+      WHEN OTHERS.
+        RAISE invalid_target.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD delete_file.
+    CASE i_target.
+      WHEN local.
+
+        cl_gui_frontend_services=>file_delete( EXPORTING  filename             = i_filename
+                                               CHANGING   rc                   = e_result
+                                               EXCEPTIONS file_delete_failed   = 1
+                                                          cntl_error           = 2
+                                                          error_no_gui         = 3
+                                                          file_not_found       = 4
+                                                          access_denied        = 5
+                                                          unknown_error        = 6
+                                                          not_supported_by_gui = 7
+                                                          wrong_parameter      = 8
+                                                          OTHERS               = 9 ).
+        IF sy-subrc <> 0.
+          e_result = sy-subrc.
+          RAISE internal_error.
+        ELSE.
+          e_result = sy-subrc.
+        ENDIF.
+
+      WHEN server.
+
+        DELETE DATASET i_filename.
+        IF sy-subrc <> 0.
+          e_result = sy-subrc.
+          RAISE internal_error.
+        ELSE.
+          e_result = sy-subrc.
+        ENDIF.
       WHEN OTHERS.
         RAISE invalid_target.
     ENDCASE.
