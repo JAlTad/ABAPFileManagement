@@ -85,12 +85,14 @@ CLASS z001_file_management DEFINITION.
     "! Read a file in binary mode and store the content in CT_DATA table
     "! @parameter i_filename     | Filename and path
     "! @parameter i_target       | (S)erver or (L)ocal
-    "! @parameter ct_data        | Binary file content
+    "! @parameter ct_data        | Binary file content in SOLIX table format
+    "! @parameter c_xstring      | Binary file content in XSTRING format
     "! @exception internal_error | Internal error
     "! @exception invalid_target | Invalid target value
     METHODS read_binary_file IMPORTING  i_filename TYPE string
                                         i_target   TYPE l_file_target
-                             CHANGING   ct_data    TYPE STANDARD TABLE
+                             CHANGING   ct_data    TYPE tabtype_solix  "STANDARD TABLE
+                                        c_xstring  TYPE xstring OPTIONAL
                              EXCEPTIONS internal_error
                                         invalid_target.
 
@@ -122,11 +124,13 @@ CLASS z001_file_management DEFINITION.
 
   PRIVATE SECTION.
     METHODS read_binary_file_local IMPORTING  i_filename TYPE string
-                                   CHANGING   ct_data    TYPE STANDARD TABLE
+                                   CHANGING   ct_data    TYPE tabtype_solix "STANDARD TABLE
+                                              c_xstring  TYPE xstring OPTIONAL
                                    EXCEPTIONS internal_error.
 
     METHODS read_binary_file_server IMPORTING  i_filename TYPE string
-                                    CHANGING   ct_data    TYPE STANDARD TABLE
+                                    CHANGING   ct_data    TYPE tabtype_solix "STANDARD TABLE
+                                               c_xstring  TYPE xstring OPTIONAL
                                     EXCEPTIONS internal_error.
 ENDCLASS.
 
@@ -137,11 +141,14 @@ CLASS z001_file_management IMPLEMENTATION.
     DATA filetype TYPE epsfiltyp.
 
     CALL FUNCTION '/SAPDMC/LSM_F4_SERVER_FILE'
-      EXPORTING  directory        = i_default
-*                 FILEMASK         = ' '
-      IMPORTING  serverfile       = r_path
-      EXCEPTIONS canceled_by_user = 1
-                 OTHERS           = 2.
+      EXPORTING
+        directory        = i_default
+*       FILEMASK         = ' '
+      IMPORTING
+        serverfile       = r_path
+      EXCEPTIONS
+        canceled_by_user = 1
+        OTHERS           = 2.
     IF sy-subrc <> 0.
 
       IF sy-subrc = 1.
@@ -208,20 +215,21 @@ CLASS z001_file_management IMPLEMENTATION.
 
       CALL FUNCTION 'EPS_GET_FILE_ATTRIBUTES'
         EXPORTING
-*                   FILE_NAME              =
-                   iv_long_file_name      = CONV eps2filnam( r_path )
-*                   DIR_NAME               =
-*                   IV_LONG_DIR_NAME       =
+*         FILE_NAME              =
+          iv_long_file_name      = CONV eps2filnam( r_path )
+*         DIR_NAME               =
+*         IV_LONG_DIR_NAME       =
         IMPORTING
-*                   FILE_SIZE              =
-*                   FILE_OWNER             =
-*                   FILE_MODE              =
-                   file_type              = filetype
-*                   FILE_MTIME             =
-*                   FILE_SIZE_LONG         =
-        EXCEPTIONS read_directory_failed  = 1
-                   read_attributes_failed = 2
-                   OTHERS                 = 3.
+*         FILE_SIZE              =
+*         FILE_OWNER             =
+*         FILE_MODE              =
+          file_type              = filetype
+*         FILE_MTIME             =
+*         FILE_SIZE_LONG         =
+        EXCEPTIONS
+          read_directory_failed  = 1
+          read_attributes_failed = 2
+          OTHERS                 = 3.
       IF sy-subrc <> 0.
         MESSAGE s050(mdp_bs_extractor) " WITH r_path
                 DISPLAY LIKE 'E'.
@@ -232,12 +240,14 @@ CLASS z001_file_management IMPLEMENTATION.
         WHEN abap_true.
           IF filetype CS 'file'.
             CALL FUNCTION 'TRINT_SPLIT_FILE_AND_PATH'
-              EXPORTING  full_name = r_path
+              EXPORTING
+                full_name = r_path
               IMPORTING
-*                         STRIPPED_NAME =
-                         file_path = r_path
-              EXCEPTIONS x_error   = 1
-                         OTHERS    = 2.
+*               STRIPPED_NAME =
+                file_path = r_path
+              EXCEPTIONS
+                x_error   = 1
+                OTHERS    = 2.
             IF sy-subrc <> 0.
 * Implement suitable error handling here
             ENDIF.
@@ -475,6 +485,32 @@ CLASS z001_file_management IMPLEMENTATION.
       WHEN OTHERS.
         RAISE invalid_target.
     ENDCASE.
+
+**Now LOOP at CT_DATA and concatenate it to an XSTRING in BYTE MODE
+    DATA lv_xstring TYPE xstring.
+    DATA lv_len TYPE i.
+    DESCRIBE TABLE ct_data LINES DATA(lv_count).
+
+    LOOP AT ct_data INTO DATA(ls_data).
+      IF sy-tabix = lv_count.
+        DATA(lv_rest) = xstrlen( ls_data-line ).
+        CONCATENATE lv_xstring ls_data-line(lv_rest) INTO lv_xstring IN BYTE MODE.
+      ELSE.
+        CONCATENATE lv_xstring ls_data-line INTO lv_xstring IN BYTE MODE.
+        lv_len += 255.
+      ENDIF.
+    ENDLOOP.
+    lv_len += lv_rest.
+
+
+**    CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+**      EXPORTING
+**        buffer        = lv_xstring
+**      IMPORTING
+**        output_length = lv_len
+**      TABLES
+**        binary_tab    = lt_binarchivobject.
+
   ENDMETHOD.
 
   METHOD read_binary_file_local.
@@ -520,8 +556,7 @@ CLASS z001_file_management IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD read_binary_file_server.
-    DATA l_reg TYPE x255.
-    FIELD-SYMBOLS <hex_container> TYPE x.
+    DATA l_reg LIKE LINE OF ct_data.
 
     FREE ct_data[].
 
@@ -529,20 +564,16 @@ CLASS z001_file_management IMPLEMENTATION.
     IF sy-subrc <> 0.
       RAISE internal_error.
     ELSE.
-* Read file and fill CT_DATA table
 
-      ASSIGN l_reg TO <hex_container> CASTING.
-      IF <hex_container> IS ASSIGNED.
-        DO.
-          CLEAR l_reg.
-          READ DATASET i_filename INTO <hex_container>.
-          IF sy-subrc <> 0.
-            EXIT.
-          ENDIF.
-          APPEND l_reg TO ct_data.
-        ENDDO.
-      ENDIF.
-      UNASSIGN <hex_container>.
+* Read file and fill CT_DATA table
+      DO.
+        READ DATASET i_filename INTO l_reg.
+        IF sy-subrc <> 0.
+          EXIT.
+        ENDIF.
+
+        APPEND l_reg TO ct_data.
+      ENDDO.
 
       CLOSE DATASET i_filename.
       IF sy-subrc <> 0.
@@ -555,11 +586,13 @@ CLASS z001_file_management IMPLEMENTATION.
     CASE i_target.
       WHEN server.
         CALL FUNCTION 'ARCHIVFILE_SERVER_TO_SERVER'
-          EXPORTING  sourcepath       = CONV saepfad( i_filename_origin )  " Path + file name on application server
-                     targetpath       = CONV saepfad( i_filename_destination )   " Path + file name on client
-          EXCEPTIONS error_file       = 1                " File access error
-                     no_authorization = 2
-                     OTHERS           = 3.
+          EXPORTING
+            sourcepath       = CONV saepfad( i_filename_origin )  " Path + file name on application server
+            targetpath       = CONV saepfad( i_filename_destination )   " Path + file name on client
+          EXCEPTIONS
+            error_file       = 1                " File access error
+            no_authorization = 2
+            OTHERS           = 3.
 
         IF sy-subrc = 0.
           DELETE DATASET i_filename_origin.
