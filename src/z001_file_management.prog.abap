@@ -502,7 +502,9 @@ CLASS z001_file_management IMPLEMENTATION.
     ENDLOOP.
     lv_len += lv_rest.
 
-
+    IF lv_xstring IS NOT INITIAL.
+      c_xstring = lv_xstring.
+    ENDIF.
 **    CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
 **      EXPORTING
 **        buffer        = lv_xstring
@@ -567,8 +569,12 @@ CLASS z001_file_management IMPLEMENTATION.
 
 * Read file and fill CT_DATA table
       DO.
+        CLEAR l_reg.
         READ DATASET i_filename INTO l_reg.
         IF sy-subrc <> 0.
+          IF l_reg IS NOT INITIAL.
+            APPEND l_reg TO ct_data.
+          ENDIF.
           EXIT.
         ENDIF.
 
