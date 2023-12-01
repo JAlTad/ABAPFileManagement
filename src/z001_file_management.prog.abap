@@ -137,8 +137,14 @@ ENDCLASS.
 
 CLASS z001_file_management IMPLEMENTATION.
   METHOD search_help_server_file.
-    CONSTANTS lc_path_symbol TYPE c LENGTH 1 VALUE '/'.
+    DATA separator TYPE c LENGTH 1.
     DATA filetype TYPE epsfiltyp.
+
+    IF sy-opsys = 'Windows NT' OR sy-opsys = 'DOS'.         "#EC NOTEXT
+      separator = '\'.
+    ELSE.
+      separator = '/'.
+    ENDIF.
 
     CALL FUNCTION '/SAPDMC/LSM_F4_SERVER_FILE'
       EXPORTING
@@ -256,8 +262,8 @@ CLASS z001_file_management IMPLEMENTATION.
             DATA(name_len) = strlen( r_path ).
             DATA(offset) = name_len - 1.
 
-            IF r_path+offset(1) <> lc_path_symbol.
-              CONCATENATE r_path lc_path_symbol INTO r_path.
+            IF r_path+offset(1) <> separator.
+              CONCATENATE r_path separator INTO r_path.
             ENDIF.
           ELSE.
             " Unknown type ?
@@ -327,7 +333,7 @@ CLASS z001_file_management IMPLEMENTATION.
   METHOD check_file_exists.
     DATA ld_file        TYPE string.
 
-    DATA file_separator TYPE c LENGTH 1.
+    DATA dir_separator TYPE c LENGTH 1.
 
     CLEAR: ld_file,
            result.
@@ -335,9 +341,15 @@ CLASS z001_file_management IMPLEMENTATION.
     CASE i_target.
 
       WHEN server.
-        file_separator = '/'. " Unix-like separator
+
+        IF sy-opsys = 'Windows NT' OR sy-opsys = 'DOS'.     "#EC NOTEXT
+          dir_separator = '\'.
+        ELSE.
+          dir_separator = '/'.
+        ENDIF.
+
         CONCATENATE i_file_path
-                    file_separator
+                    dir_separator
                     i_file_name INTO ld_file.
 
         OPEN DATASET ld_file FOR INPUT IN BINARY MODE.
@@ -351,7 +363,7 @@ CLASS z001_file_management IMPLEMENTATION.
 
       WHEN local.
 
-        cl_gui_frontend_services=>get_file_separator( CHANGING   file_separator       = file_separator
+        cl_gui_frontend_services=>get_file_separator( CHANGING   file_separator       = dir_separator
                                                       EXCEPTIONS not_supported_by_gui = 1
                                                                  error_no_gui         = 2
                                                                  cntl_error           = 3
@@ -359,7 +371,7 @@ CLASS z001_file_management IMPLEMENTATION.
         IF sy-subrc = 0.
 
           CONCATENATE i_file_path
-                      file_separator
+                      dir_separator
                       i_file_name INTO ld_file.
 
           cl_gui_frontend_services=>file_exist( EXPORTING  file                 = ld_file
