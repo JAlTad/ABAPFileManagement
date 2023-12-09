@@ -91,7 +91,7 @@ CLASS z001_file_management DEFINITION.
     "! @exception invalid_target | Invalid target value
     METHODS read_binary_file IMPORTING  i_filename TYPE string
                                         i_target   TYPE l_file_target
-                             CHANGING   ct_data    TYPE tabtype_solix  "STANDARD TABLE
+                             CHANGING   ct_data    TYPE tabtype_solix  " STANDARD TABLE
                                         c_xstring  TYPE xstring OPTIONAL
                              EXCEPTIONS internal_error
                                         invalid_target.
@@ -124,27 +124,28 @@ CLASS z001_file_management DEFINITION.
 
   PRIVATE SECTION.
     METHODS read_binary_file_local IMPORTING  i_filename TYPE string
-                                   CHANGING   ct_data    TYPE tabtype_solix "STANDARD TABLE
+                                   CHANGING   ct_data    TYPE tabtype_solix " STANDARD TABLE
                                               c_xstring  TYPE xstring OPTIONAL
                                    EXCEPTIONS internal_error.
 
     METHODS read_binary_file_server IMPORTING  i_filename TYPE string
-                                    CHANGING   ct_data    TYPE tabtype_solix "STANDARD TABLE
+                                    CHANGING   ct_data    TYPE tabtype_solix " STANDARD TABLE
                                                c_xstring  TYPE xstring OPTIONAL
                                     EXCEPTIONS internal_error.
+
+    METHODS get_separator RETURNING VALUE(separator) TYPE char1.
+
+    METHODS directory_compress CHANGING c_directory TYPE string.
+
 ENDCLASS.
 
 
 CLASS z001_file_management IMPLEMENTATION.
   METHOD search_help_server_file.
     DATA separator TYPE c LENGTH 1.
-    DATA filetype TYPE epsfiltyp.
+    DATA filetype  TYPE epsfiltyp.
 
-    IF sy-opsys = 'Windows NT' OR sy-opsys = 'DOS'.         "#EC NOTEXT
-      separator = '\'.
-    ELSE.
-      separator = '/'.
-    ENDIF.
+    separator = get_separator( ).
 
     CALL FUNCTION '/SAPDMC/LSM_F4_SERVER_FILE'
       EXPORTING
@@ -242,6 +243,11 @@ CLASS z001_file_management IMPLEMENTATION.
         RETURN.
       ENDIF.
 
+      directory_compress(
+        CHANGING
+          c_directory = r_path
+      ).
+
       CASE i_only_path.
         WHEN abap_true.
           IF filetype CS 'file'.
@@ -331,7 +337,7 @@ CLASS z001_file_management IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD check_file_exists.
-    DATA ld_file        TYPE string.
+    DATA ld_file       TYPE string.
 
     DATA dir_separator TYPE c LENGTH 1.
 
@@ -342,11 +348,7 @@ CLASS z001_file_management IMPLEMENTATION.
 
       WHEN server.
 
-        IF sy-opsys = 'Windows NT' OR sy-opsys = 'DOS'.     "#EC NOTEXT
-          dir_separator = '\'.
-        ELSE.
-          dir_separator = '/'.
-        ENDIF.
+        dir_separator = get_separator( ).
 
         CONCATENATE i_file_path
                     dir_separator
@@ -500,7 +502,8 @@ CLASS z001_file_management IMPLEMENTATION.
 
 **Now LOOP at CT_DATA and concatenate it to an XSTRING in BYTE MODE
     DATA lv_xstring TYPE xstring.
-    DATA lv_len TYPE i.
+    " TODO: variable is assigned but only used in commented-out code (ABAP cleaner)
+    DATA lv_len     TYPE i.
     DESCRIBE TABLE ct_data LINES DATA(lv_count).
 
     LOOP AT ct_data INTO DATA(ls_data).
@@ -524,7 +527,6 @@ CLASS z001_file_management IMPLEMENTATION.
 **        output_length = lv_len
 **      TABLES
 **        binary_tab    = lt_binarchivobject.
-
   ENDMETHOD.
 
   METHOD read_binary_file_local.
@@ -700,4 +702,28 @@ CLASS z001_file_management IMPLEMENTATION.
         RAISE invalid_target.
     ENDCASE.
   ENDMETHOD.
+
+  METHOD get_separator.
+    IF sy-opsys = 'Windows NT' OR sy-opsys = 'DOS' ##NO_TEXT.
+      separator = '\'.
+    ELSE.
+      separator = '/'.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD directory_compress.
+    " eliminate unnecesary directory  self-recursion like /directory1/././././directory2
+    DATA(dir_separator) = get_separator( ).
+    DATA(dir_recursion) = |{ dir_separator }.{ dir_separator }|.
+
+    WHILE c_directory CS dir_recursion.
+      REPLACE dir_recursion IN c_directory WITH dir_separator.
+      directory_compress( CHANGING c_directory = c_directory ).
+    ENDWHILE.
+
+
+
+  ENDMETHOD.
+
 ENDCLASS.
