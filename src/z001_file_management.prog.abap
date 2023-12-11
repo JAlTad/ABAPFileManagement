@@ -96,6 +96,18 @@ CLASS z001_file_management DEFINITION.
                              EXCEPTIONS internal_error
                                         invalid_target.
 
+    "! Read a file in text mode and store the content in CT_DATA table
+    "! @parameter i_filename     | Filename and path
+    "! @parameter i_target       | (S)erver or (L)ocal
+    "! @parameter ct_data        | Binary file content in text table format
+    "! @exception internal_error | Internal error
+    "! @exception invalid_target | Invalid target value
+    METHODS read_text_file IMPORTING  i_filename TYPE string
+                                      i_target   TYPE l_file_target
+                           CHANGING   ct_data    TYPE STANDARD TABLE
+                           EXCEPTIONS internal_error
+                                      invalid_target.
+
     "! Move a file, server to server or frontend to frontend
     "! @parameter i_filename_origin      | Filename and path of source file
     "! @parameter i_filename_destination | Filename and path of destination file
@@ -133,9 +145,19 @@ CLASS z001_file_management DEFINITION.
                                                c_xstring  TYPE xstring OPTIONAL
                                     EXCEPTIONS internal_error.
 
-    METHODS get_separator RETURNING VALUE(separator) TYPE char1.
+    METHODS read_text_file_local IMPORTING  i_filename TYPE string
+                                 CHANGING   ct_data    TYPE  STANDARD TABLE
+                                            c_xstring  TYPE xstring OPTIONAL
+                                 EXCEPTIONS internal_error.
 
-    METHODS directory_compress CHANGING c_directory TYPE string.
+    METHODS read_text_file_server IMPORTING  i_filename TYPE string
+                                  CHANGING   ct_data    TYPE STANDARD TABLE
+                                             c_xstring  TYPE xstring OPTIONAL
+                                  EXCEPTIONS internal_error.
+
+    METHODS get_separator      RETURNING VALUE(separator) TYPE char1.
+
+    METHODS directory_compress CHANGING  c_directory      TYPE string.
 
 ENDCLASS.
 
@@ -243,10 +265,7 @@ CLASS z001_file_management IMPLEMENTATION.
         RETURN.
       ENDIF.
 
-      directory_compress(
-        CHANGING
-          c_directory = r_path
-      ).
+      directory_compress( CHANGING c_directory = r_path ).
 
       CASE i_only_path.
         WHEN abap_true.
@@ -711,7 +730,6 @@ CLASS z001_file_management IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
-
   METHOD directory_compress.
     " eliminate unnecesary directory  self-recursion like /directory1/././././directory2
     DATA(dir_separator) = get_separator( ).
@@ -721,9 +739,104 @@ CLASS z001_file_management IMPLEMENTATION.
       REPLACE dir_recursion IN c_directory WITH dir_separator.
       directory_compress( CHANGING c_directory = c_directory ).
     ENDWHILE.
-
-
-
   ENDMETHOD.
 
+  METHOD read_text_file.
+    CASE i_target.
+      WHEN server.
+
+        read_text_file_server( EXPORTING  i_filename     = i_filename
+                               CHANGING   ct_data        = ct_data[]
+                               EXCEPTIONS internal_error = 1
+                                          OTHERS         = 2 ).
+
+        IF sy-subrc <> 0.
+          RAISE internal_error.
+        ENDIF.
+
+      WHEN local.
+        read_text_file_local( EXPORTING  i_filename     = i_filename
+                              CHANGING   ct_data        = ct_data[]
+                              EXCEPTIONS internal_error = 1
+                                         OTHERS         = 2 ).
+
+        IF sy-subrc <> 0.
+          RAISE internal_error.
+        ENDIF.
+
+      WHEN OTHERS.
+        RAISE invalid_target.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD read_text_file_local.
+    cl_gui_frontend_services=>gui_upload( EXPORTING  filename                = i_filename
+*                                                     filetype                = 'ASC'
+*                                                     has_field_separator     = space
+*                                                     header_length           = 0
+*                                                     read_by_line            = 'X'
+*                                                     dat_mode                = space
+*                                                     codepage                =
+*                                                     ignore_cerr             = abap_true
+*                                                     replacement             = '#'
+*                                                     virus_scan_profile      =
+*  IMPORTING
+*                                                     filelength              =
+*                                                     header                  =
+                                          CHANGING   data_tab                = ct_data
+*                                                     isscanperformed         = space
+                                          EXCEPTIONS file_open_error         = 1
+                                                     file_read_error         = 2
+                                                     no_batch                = 3
+                                                     gui_refuse_filetransfer = 4
+                                                     invalid_type            = 5
+                                                     no_authority            = 6
+                                                     unknown_error           = 7
+                                                     bad_data_format         = 8
+                                                     header_not_allowed      = 9
+                                                     separator_not_allowed   = 10
+                                                     header_too_long         = 11
+                                                     unknown_dp_error        = 12
+                                                     access_denied           = 13
+                                                     dp_out_of_memory        = 14
+                                                     disk_full               = 15
+                                                     dp_timeout              = 16
+                                                     not_supported_by_gui    = 17
+                                                     error_no_gui            = 18
+                                                     OTHERS                  = 19 ).
+    IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*   WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      RAISE internal_error.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD read_text_file_server.
+    " TODO: variable is assigned but never used (ABAP cleaner)
+    DATA l_reg TYPE string.
+
+    OPEN DATASET i_filename FOR INPUT
+         IN TEXT MODE ENCODING DEFAULT
+         IGNORING CONVERSION ERRORS.
+
+    IF sy-subrc <> 0.
+      RAISE internal_error.
+    ELSE.
+
+      REFRESH ct_data.
+      DO.
+        CLEAR l_reg.
+        READ DATASET i_filename INTO l_reg.
+        IF sy-subrc <> 0.
+          EXIT.
+        ENDIF.
+        APPEND l_reg TO ct_data.
+      ENDDO.
+
+      CLOSE DATASET i_filename.
+      IF sy-subrc <> 0.
+        RAISE internal_error.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
 ENDCLASS.
