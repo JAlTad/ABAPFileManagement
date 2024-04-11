@@ -37,6 +37,14 @@ CLASS z001_file_management DEFINITION.
         server    VALUE 'S',
         local     VALUE 'L',
       END OF ENUM l_file_target.
+**  If ENUM types are not yet released in your system, replace with the
+**  following commented code:
+**********************************************************************
+**    TYPES l_file_target TYPE char1.
+**    CONSTANTS undefined TYPE l_file_target VALUE ''.
+**    CONSTANTS server    TYPE l_file_target VALUE 'S'.
+**    CONSTANTS local     TYPE l_file_target VALUE 'L'.
+**********************************************************************
 
     "! Open a modal window to get filename or pathname
     "! @parameter i_default   | Input default pathname/filename
